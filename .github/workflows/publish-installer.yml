@@ -1,0 +1,36 @@
+name: Publish Windows installer
+
+on:
+  push:
+    branches:
+      - "upload/**"
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reassemble and verify installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#upload/}"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          mkdir -p out
+          cat "chunks/$version"/part-* > "out/INTAI-Setup-$version.exe"
+          sha256sum --check "chunks/$version/SHA256SUMS"
+      - name: Publish public release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#upload/}"
+          gh release create "v$version" "out/INTAI-Setup-$version.exe" \
+            --target main \
+            --title "INTAI $version" \
+            --notes "Windows installer. Download from https://www.intai.in/download and verify the published SHA-256 checksum."
+
