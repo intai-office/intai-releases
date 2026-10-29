@@ -1,0 +1,41 @@
+name: Publish Windows installer from verified Blob
+on:
+  push:
+    branches:
+      - "upload-blob/**"
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download and verify installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#upload-blob/}"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          manifest="manifests/$version.json"
+          url="$(jq -r '.url' "$manifest")"
+          sha="$(jq -r '.sha256' "$manifest")"
+          bytes="$(jq -r '.bytes' "$manifest")"
+          [[ "$url" =~ ^https://[a-z0-9]+\.public\.blob\.vercel-storage\.com/releases/v${version}/INTAI-Setup-${version}\.exe$ ]]
+          [[ "$sha" =~ ^[a-f0-9]{64}$ ]]
+          [[ "$bytes" =~ ^[0-9]+$ ]]
+          mkdir -p out
+          file="out/INTAI-Setup-$version.exe"
+          curl --fail --location --retry 5 --retry-delay 2 --proto '=https' --tlsv1.2 --max-time 1800 "$url" -o "$file"
+          test "$(stat -c %s "$file")" = "$bytes"
+          echo "$sha  $file" | sha256sum --check -
+      - name: Publish public release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#upload-blob/}"
+          gh release create "v$version" "out/INTAI-Setup-$version.exe" \
+            --target main \
+            --title "INTAI $version" \
+            --notes "Windows installer. Download from https://www.intai.in/download and verify the published SHA-256 checksum."
